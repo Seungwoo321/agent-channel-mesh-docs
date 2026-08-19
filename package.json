@@ -1,0 +1,20 @@
+{
+  "name": "agent-channel-mesh-docs",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "agent-channel-mesh 가이드 문서 사이트. Astro 5 + Starlight.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro check && astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.9",
+    "@astrojs/starlight": "^0.37.7",
+    "astro": "^5.18.1",
+    "sharp": "^0.34.5",
+    "typescript": "^5.9.3"
+  }
+}
