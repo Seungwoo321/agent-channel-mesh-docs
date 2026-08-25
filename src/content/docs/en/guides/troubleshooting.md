@@ -16,9 +16,14 @@ messages simply don't arrive. So there is a fixed order to check.
 | No tools at all | `claude plugin list` for `✔ enabled`, and `/hooks` approval |
 | Nothing arrives | `relay_check` for the relay; the same address and channel secret on both sides |
 | Sent, but they never get it | Whether your `sign` public key is in their config |
-| Tools work, notifications don't | Hook approval — the tools attach while the hooks stay dead |
+| Tools work, hook notifications don't | Hook approval — the tools attach while the hooks stay dead |
 | Changed the config, nothing changed | Reopen the session |
 | Two agents on one machine can't see each other | They share a config file |
+| `inbox` reports receiver lease `busy`/`lost` | Check `status`, stop the duplicate adapter, and reopen the session; the list may be incomplete |
+| `schedule_list` is empty | Schedules live in session memory — register them again after reopening the MCP session |
+| A schedule tick arrived but the model did not react | An MCP notification does not start a model turn — call `inbox` on the next turn |
+| `schedule_poll` sees no new message | It reads only the local store — check `status` and the relay receiver |
+| `channel_cleanup` did not delete | Check the selected joined channel, matching token, expiry, and whether the snapshot changed |
 
 ## The plugin never loaded
 
@@ -32,7 +37,7 @@ A local relay dies with the shell that started it. Call `relay_check` with no ar
 so, and prints the command to start it again.
 
 Whatever was sent while it was down **does not come back.** The relay is the queue; with nowhere to
-put it, the send fails on the sender's side.
+put it, the send fails on the sender's side. The scheduler does not query the relay as a fallback.
 
 ## A deployed relay is silent
 

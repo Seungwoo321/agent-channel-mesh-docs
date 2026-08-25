@@ -42,4 +42,12 @@ made from the **verified signer**, though, not from the axis — see [Authority]
 | Local store | Under `store.dir`, partitioned by fingerprint | The **canonical copy** of decrypted conversations |
 | Relay | Local or a public address | A ciphertext queue. Entries are dropped past their TTL |
 
+## How a session notices messages
+
+The receiving core writes what it gets from the relay to the local store first. `inbox` reads that
+canonical copy. The in-session Croner scheduler also observes only messages already in that store at
+3–10 minute intervals; it does not relay-fetch, relay-post, or acquire a receiver lease. Its MCP
+notification does not start a model turn, so an idle host still needs a later turn to call `inbox`.
+The full tool contract is in [Sending and receiving](/en/guides/usage/) and [Tools](/en/reference/tools/).
+
 Next: [Install](/en/start/install/).

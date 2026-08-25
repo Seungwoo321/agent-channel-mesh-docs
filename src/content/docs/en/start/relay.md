@@ -50,3 +50,10 @@ You can hold several channels, but the relay address is a single field for the w
 
 Your identity and channels survive the move: the relay only carries envelopes and takes no part in
 the cryptography. Envelopes still queued on the old relay do not follow you.
+
+## The session scheduler is separate from the relay
+
+`schedule_poll` is a session-local Croner job that observes messages already in the local store. It
+does not relay-fetch, relay-post, or acquire a receiver lease, so it does not replace the relay
+receiver. The schedule and its MCP notification do not wake an idle host; messages already stored
+locally are read with `inbox` on a later turn.

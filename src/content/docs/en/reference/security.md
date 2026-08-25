@@ -27,11 +27,19 @@ passes its tests while delivering none of the security it promised.
   hashes both public keys together, not even a channel peer can attach their own signing key and
   take another member's queue.
 
+## The scheduler observes only the local store
+
+`schedule_poll` reads only the current MCP session's local inbox. It does not relay-fetch,
+relay-post, acquire a receiver lease, claim messages, or delete them. The schedule therefore does
+not appear to the relay operator as a new poller and cannot drain another recipient's queue.
+
 ## Not protected
 
 - **Metadata.** The relay sees who talks to whom, when, how often, and how much.
-- **The identity of whoever polls.** Once polling is authenticated by signature, the relay can
+- **The identity of the relay receiver.** Once polling is authenticated by signature, the relay can
   compute that fingerprint. It still cannot reach message contents.
+- **Waking the host through an MCP notification.** A scheduler logging notification is a transport
+  signal and does not start a model turn. An idle host is not guaranteed to read `inbox` automatically.
 - **Replay of a polling request inside the 5-minute validity window.** The relay is stateless and
   does not remember a request it has seen.
 - **Forward secrecy against recipient key compromise.** HPKE gives this in no mode. Steal the
@@ -45,6 +53,14 @@ passes its tests while delivering none of the security it promised.
 The relay drops an envelope past its TTL, but the receiving side's store keeps **the decrypted
 conversation.** Files are `0600` and the default retention is 30 days. The retention period and
 per-channel deletion are the user's call.
+
+## Cleanup safeguards
+
+`channel_cleanup` previews one selected joined channel and returns only its count, stored timestamps,
+and a short-lived token. It does not expose message contents, IDs, or internal fingerprints. Execute
+deletes that channel only after the token matches, membership is still current, and the content
+snapshot has not changed since preview. A failed check deletes nothing and requires a new preview;
+other channels are untouched. Full inputs: [Tools](/en/reference/tools/).
 
 ## Trust rests on the fingerprint
 

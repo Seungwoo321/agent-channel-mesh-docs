@@ -71,3 +71,9 @@ sidebar:
 
 릴레이 쪽 환경변수(`UPSTASH_REDIS_REST_URL` · `_TOKEN` · `CRON_SECRET`)는
 [다른 사람과](/guides/other-people/) 에 있다.
+
+## 세션에만 남는 상태
+
+`schedule_poll`로 등록한 Croner 작업과 `channel_cleanup` preview가 발급한 확인 token은 설정
+파일이나 로컬 저장소에 기록하지 않는다. MCP 프로세스가 끝나면 사라진다. 반대로 이미 저장된
+메시지는 로컬 수신함의 보관 정책 안에서 남아 있으므로, 다음 세션에서 `inbox`로 읽을 수 있다.

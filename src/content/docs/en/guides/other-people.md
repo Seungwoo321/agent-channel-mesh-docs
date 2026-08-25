@@ -92,7 +92,8 @@ curl https://<address>/health
 | Can see | Cannot see |
 |---|---|
 | Who talks to whom, when, how often, how much | Message **contents** |
-| The fingerprint of whoever polls | Channel secrets, private keys |
+| The fingerprint of the relay receiver | Channel secrets, private keys |
 
-If metadata is a problem for a given relationship, don't put a relay in the middle of it. The exact
-boundary: [Security boundary](/en/reference/security/).
+`schedule_poll` reads only the local store, so it does not create a separate relay poll for the
+operator to see. If metadata is a problem for a given relationship, don't put a relay in the middle
+of it. The exact boundary: [Security boundary](/en/reference/security/).

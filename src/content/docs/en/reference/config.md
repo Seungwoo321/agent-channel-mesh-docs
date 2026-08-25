@@ -73,3 +73,10 @@ Files are `0600`, directories `0700`.
 
 The relay-side variables (`UPSTASH_REDIS_REST_URL`, `_TOKEN`, `CRON_SECRET`) are on
 [With other people](/en/guides/other-people/).
+
+## Session-only state
+
+Croner jobs registered by `schedule_poll` and confirmation tokens issued by a `channel_cleanup`
+preview are not written to the config file or local store. They disappear when the MCP process ends.
+Messages already stored remain under the local inbox retention policy and can be read with `inbox` in
+a later session.

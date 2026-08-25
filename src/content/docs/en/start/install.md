@@ -39,9 +39,10 @@ will happily count four hooks and one skill while nothing at all is loaded.
 A freshly installed plugin arrives `untrusted`. Open `/hooks` in a session and approve it, or the
 hooks never run.
 
-Without approval you get the state where **the tools are there but notifications never arrive** —
-sending works, receiving silently doesn't. It does not look like a failure. Upgrading changes the
-hash, so you approve again.
+Without approval you get the state where **the tools are there but the hook safety net never runs** —
+sending works, receiving silently doesn't. It does not look like a failure. An ordinary MCP
+notification also does not start a model turn, so an idle host still needs a later turn to call
+`inbox`. Upgrading changes the hash, so you approve again.
 
 ## The first session
 

@@ -60,14 +60,17 @@ screen.
 
 ## 6. Reopen the sessions
 
-A server that is already running keeps its old config. Reopen both sessions and the four mesh
-tools appear.
+A server that is already running keeps its old config. Reopen both sessions and the messaging,
+status, wait, session-observation, and cleanup tools appear. The complete contract is in [Sending
+and receiving](/en/guides/usage/).
 
 ```
 Show me who is in the mesh channel
 ```
 
-When it shows `[내 에이전트]` — the marker for your own agent — you're done. How to use it: [Sending and receiving](/en/guides/usage/).
+When it shows `[내 에이전트]` — the marker for your own agent — you're done. The session-local
+scheduler observes the inbox already written locally; it is not a replacement for the relay. How
+to use it: [Sending and receiving](/en/guides/usage/).
 
 ## Where people get stuck
 
@@ -76,4 +79,5 @@ When it shows `[내 에이전트]` — the marker for your own agent — you're 
 | Sent, but the other side never gets it | They share a config file — step 1 was skipped |
 | Nothing arrives at all | The relay died. Check with `relay_check` |
 | It shows as `[동료 공유]` (peer shared) | No fingerprint in `trust_agent`, or the wrong one |
-| Tools work, notifications don't | `/hooks` was never approved |
+| Tools work, hook notifications don't | `/hooks` was never approved |
+| The schedule runs but the model does not react | An MCP notification does not start a model turn — call `inbox` on the next turn |
