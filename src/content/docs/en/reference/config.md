@@ -5,8 +5,9 @@ sidebar:
   order: 2
 ---
 
-`~/.agent-channel-mesh/config.json` — the adapter's **only** input. Change the path with
-`ACM_CONFIG`.
+The config file is the adapter's **only** input. Set its path explicitly with `ACM_CONFIG`. A normal
+plugin-launched session whose session ID is available uses a config under its session namespace by
+default. An explicit `ACM_CONFIG` takes precedence over that resolver choice.
 
 **Anything wider than mode 600 and it is not read; the adapter dies.** This one file voids all of
 the cryptography, so it is not downgraded to a warning. This page documents what the values mean;
@@ -24,6 +25,18 @@ permissions.
 | `self` | Fingerprints of your own agents. Only these are `execute` |
 | `policy` | Default authority for arriving messages, plus per-fingerprint exceptions |
 | `store` | Local store location and retention |
+
+## Per-session isolation
+
+A normal plugin-launched session has its own config file, identity derived from its seed, local-store
+namespace, and receiver lease. Sessions may share a relay and channel, but one session's `inbox` does
+not appear in another. Codex prefers `CODEX_THREAD_ID` as its session ID and falls back to
+`ACM_SESSION_ID`.
+
+Pointing multiple sessions at the same `ACM_CONFIG` explicitly gives up that isolation. They reuse the
+same identity, store, and receiver lease, so a second adapter may fail with `busy`. An optional Codex
+hook invoked without session metadata does not fall back to this shared path: it returns `{}` and exits
+0. MCP and monitor entry points report a missing-session-ID diagnostic instead.
 
 ## `channels[]`
 
@@ -58,9 +71,9 @@ people whose fingerprints were never compared.
 | `retentionMs` | 30 days | Retention. Unlimited is not offered |
 | `maxPerChannel` | 2000 | Cap on stored messages per channel |
 
-Actual files always go **inside a fingerprint directory under `dir`.** Change `dir` and that segment
-is still appended — two identities on one machine writing to the same files means one side's
-messages disappear from the other's.
+For resolver-created session configs, actual files go under the session-specific `store.dir` namespace
+and are partitioned further by identity and channel. Manually sharing `ACM_CONFIG` or `store.dir`
+between sessions breaks that isolation: messages may mix or the receiver lease may conflict.
 
 Files are `0600`, directories `0700`.
 
@@ -68,7 +81,9 @@ Files are `0600`, directories `0700`.
 
 | Name | Where it is used |
 |---|---|
-| `ACM_CONFIG` | Config file path. Used to split identities on one machine |
+| `ACM_CONFIG` | Config file path. Overrides the resolver's session-specific default |
+| `CODEX_THREAD_ID` | Codex session ID. Takes precedence over `ACM_SESSION_ID` |
+| `ACM_SESSION_ID` | Fallback Codex session ID used by the resolver for namespace and presence |
 | `ACM_RELAY_TOKEN` | Relay write token. Passed as an argument it shows up in `ps` |
 
 The relay-side variables (`UPSTASH_REDIS_REST_URL`, `_TOKEN`, `CRON_SECRET`) are on
@@ -79,4 +94,5 @@ The relay-side variables (`UPSTASH_REDIS_REST_URL`, `_TOKEN`, `CRON_SECRET`) are
 Croner jobs registered by `schedule_poll` and confirmation tokens issued by a `channel_cleanup`
 preview are not written to the config file or local store. They disappear when the MCP process ends.
 Messages already stored remain under the local inbox retention policy and can be read with `inbox` in
-a later session.
+a later session using the same session namespace. Presence heartbeats are signed TTL metadata held
+briefly by the relay, not persistent session state in the config file.

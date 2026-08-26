@@ -15,6 +15,7 @@ sidebar:
 | `inbox` | 도착한 것을 로컬 저장소에서 읽는다 |
 | `whoami` | 상대에게 줄 내 공개키와 지문 |
 | `status` | 릴레이·수신 루프·로컬 수신함·호스트 깨우기 상태를 읽는다 |
+| `channel_status` | 설정된 멤버와 서명된 세션 presence를 읽는다. 변경하지 않는다 |
 | `wait` | 현재 모델 턴 안에서 로컬 수신함의 변화를 제한 시간 동안 기다린다 |
 
 ## 정본은 로컬 저장소다
@@ -25,6 +26,49 @@ sidebar:
 그래서 놓친 것 같으면 `inbox` 로 다시 읽으면 된다. 릴레이를 다시 치는 것이 아니므로 몇 번을
 불러도 릴레이를 다시 fetch하지 않는다. 로컬 저장소에 이미 기록된 수신함은 내구성이 있지만,
 MCP 서버 프로세스 안의 스케줄과 확인 token은 내구성이 없다.
+
+## 세션별 독립성과 채널 상태
+
+릴레이는 여러 세션이 함께 쓸 수 있는 운반 수단이다. 어댑터는 세션마다 설정 파일·신원·로컬
+저장소 namespace·receiver lease를 따로 갖는다. 그래서 같은 채널을 공유해도 일대일·일대다·
+다대다 구성이 서로의 수신함을 합치지 않는다. `ACM_CONFIG`를 명시해 같은 파일을 여러 세션에
+주면 이 격리를 사용자가 해제한 것이며, 같은 receiver lease를 두고 `busy` 충돌이 날 수 있다.
+
+Codex 세션의 기본 식별자는 `CODEX_THREAD_ID` 또는 `ACM_SESSION_ID`다. 두 값이 없으면 선택적
+Codex hook은 `{}`를 반환하고 exit 0으로 끝나며 공용 설정으로 fallback하지 않는다. MCP와
+monitor 진입점은 이 경우 진단을 내므로, 세션 ID를 가진 정상 호스트에서 다시 시작해야 한다.
+
+일반 MCP 어댑터의 수신 루프는 릴레이를 폴링해 봉투를 복호화한 뒤 로컬 수신함에 쓴다. 빈 응답과
+실패에는 2초부터 최대 5분까지 adaptive backoff를 적용하고 메시지를 받으면 간격을 초기화한다.
+`inbox`는 이 로컬 정본을 읽는 툴이다.
+
+`channel_status`는 설정과 관찰을 분리해 보여 주는 읽기 전용 스냅샷이다.
+
+- 설정된 멤버와 실제로 서명된 TTL presence를 함께 보여 준다.
+- 유효한 heartbeat가 아직 있으면 `online`, 없거나 만료됐으면 `unknown`이다. `unknown`은 곧
+  오프라인이라는 뜻이 아니다.
+- 이 세션 설정에 없는 서명된 외부 세션은 `unmatched_presence`로 보여 준다.
+- 같은 신원이 여러 프로세스·PC에서 살아 있으면 `session_id`와 `instance_id`별로 따로 보여 준다.
+
+presence는 같은 Ed25519 신원이 서명한 단기 기록이다. 어댑터는 약 30초마다 heartbeat를 보내고
+기록은 약 90초 뒤 만료된다. 릴레이는 메시지 본문이 아니라 이 상태 메타데이터만 잠시 보관한다.
+
+### HTML 현황판
+
+어댑터 CLI의 `dashboard` 명령으로 한 번의 스냅샷이나 반복 갱신 HTML을 만든다.
+
+```bash
+bun run src/adapter/bin.ts dashboard \
+  --config <session-config.json> \
+  --output .local/dashboards/channel-status.html \
+  --watch-ms 30000
+```
+
+`--config`는 관찰할 세션 설정, `--output`은 HTML 파일, `--watch-ms`는 반복 갱신 간격이다.
+`--watch-ms`를 생략하면 한 번만 쓰고 끝난다. 대시보드는 수신 lease를 잡거나 릴레이의
+`/fetch`를 호출하지 않는 관찰자다. 현재 신원·설정 멤버·presence의 세션/인스턴스·외부
+`unmatched_presence`는 표시하지만 메시지 본문·개인 시드·채널 비밀은 표시하지 않는다.
+`channel_status`와 같은 스냅샷을 쓰므로 세션 상태를 관리하는 현황판으로 사용할 수 있다.
 
 ## 세션 로컬 Croner 스케줄러
 
@@ -46,6 +90,9 @@ MCP 서버 프로세스 안의 스케줄과 확인 token은 내구성이 없다.
 메시지 삭제·선점은 하지 않는다. `schedule_list`는 상태를 보여주고 `schedule_cancel`은 하나를
 취소한다. 스케줄은 Croner와 함께 현재 MCP 프로세스 메모리에만 있으므로 세션을 다시 열면 다시
 등록해야 하며, 호스트 프로세스를 계속 살려 두지도 않는다.
+
+이 작업은 기본 수신 루프를 대신하지 않는다. 릴레이에서 새 봉투를 가져오는 폴링과 로컬 수신함에
+기록하는 일은 어댑터가 담당하고, scheduler는 이미 기록된 수신함만 관찰한다.
 
 tick 결과는 MCP logging notification으로 전해진다. 이 알림은 전송 계층의 관찰 신호일 뿐
 **모델 턴을 시작하지 않는다.** 호스트가 유휴 상태라면 모델은 그 순간 반응하지 않는다. 다음

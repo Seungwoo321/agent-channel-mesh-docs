@@ -18,10 +18,59 @@ inbox.
 | `inbox` | Reads arrived messages from the local store; it does not fetch the relay again |
 | `whoami` | Shows your `sign` and `kem` public keys and fingerprint |
 | `status` | Reads relay, receiver, local-inbox, delivery, and host-wake state |
+| `channel_status` | Reads configured members and signed session presence; read-only |
 | `wait` | Waits for a local-store change for a bounded time in the current model turn |
 
 `wait.timeout_ms` defaults to 5,000ms and is capped at 30,000ms. It also does not poll the relay or
 create a new receiver loop.
+
+## Session receiver and presence state
+
+The normal MCP adapter runs one receiver for each session. It fetches ciphertext from the relay,
+decrypts it, and writes it to that session's local store. A session has its own config, identity,
+store namespace, and receiver lease, so sharing a relay and channel does not merge inboxes.
+
+Starting two adapters against the same session config allows only one receiver lease. The second
+adapter fails with `busy`, and a running adapter that loses its lease is reported as `lost`. This is
+not a limit on different sessions; it is the protection that prevents two processes from draining
+one inbox. When a duplicate is suspected, check `status`, stop only the stale adapter for that
+session, and reopen the session. `channel_status` and the dashboard do not acquire this lease.
+
+### `channel_status`
+
+`channel_status` is a read-only snapshot of channel connections visible to the current session. It
+does not fetch or delete messages, and it keeps configuration separate from observation.
+
+- It shows configured channel members alongside observed presence.
+- Presence is a TTL record signed by the same Ed25519 identity. A heartbeat is refreshed about every
+  30 seconds and expires after about 90 seconds.
+- Only a valid, unexpired heartbeat is `online`. Missing or old heartbeats remain `unknown`; that
+  alone is not proof that a session is offline.
+- A signed external session not present in this session's config appears as `unmatched_presence`.
+  Add it only after comparing its fingerprint out of band.
+- Multiple processes or PCs with the same identity remain separate by `session_id` and `instance_id`.
+
+Presence may include the fingerprint, label, session/instance IDs, and observed/expiry timestamps
+needed to correlate state, but it never includes message bodies. The relay temporarily stores this
+signed metadata only.
+
+### HTML status dashboard
+
+The adapter CLI's `dashboard` command writes the same snapshot as `channel_status` to HTML.
+
+```bash
+bun run src/adapter/bin.ts dashboard \
+  --config <session-config.json> \
+  --output .local/dashboards/channel-status.html \
+  --watch-ms 30000
+```
+
+`--config` selects the session to observe, `--output` selects the output file, and `--watch-ms` sets
+the refresh interval. Omit `--watch-ms` for one snapshot. The command is an observer: it takes no
+receiver lease and does not call relay `/fetch`. It shows identity, configured members, presence,
+and `unmatched_presence`, but never message bodies, private seeds, or channel secrets. It keeps
+observed external sessions and multiple instances in the board instead of reducing the view to one
+orchestrator session.
 
 When Relay is configured but the receiver lease is `busy` or `lost`, `inbox` may show records already
 in the local store but returns an explicit error and marks the list as potentially incomplete. Do not
@@ -60,6 +109,10 @@ It does not do any of the following:
 - Acquire a new receiver lease
 - Claim, delete, or mark messages read
 - Inspect another session's schedules
+
+The default receiver loop polls the relay separately. The scheduler does not replace it; it observes
+only results already written to the local store. Empty or failed default receiver polls use backoff
+from 2 seconds up to 5 minutes, resetting when a message arrives.
 
 The scheduler uses Croner's session-local timer. `schedule_list` may show
 `scheduled`, `running`, `completed`, `cancelled`, `expired`, or `replaced`. The timer does not keep

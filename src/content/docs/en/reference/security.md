@@ -26,6 +26,19 @@ passes its tests while delivering none of the security it promised.
 - **Draining someone else's inbox.** Polling is authenticated by signature, and because the key id
   hashes both public keys together, not even a channel peer can attach their own signing key and
   take another member's queue.
+- **Forging presence state.** Presence carrying the session, instance, and expiry data is valid only
+  with the same identity's Ed25519 signature. An expired record is never reported as `online`.
+
+## Session isolation and duplicate receivers
+
+The plugin resolver creates a separate config, seed-derived identity, local-store namespace, and
+receiver lease for each normal session. Sessions can share a relay and channel, but their stored
+messages and receiving loops remain separate. Pointing multiple sessions at the same `ACM_CONFIG` or
+`store.dir` explicitly gives up that isolation and reuses one identity and inbox.
+
+Only one adapter may drain a given inbox at a time. A second process reports `busy`, and a running
+process that loses its lease reports `lost`. This is not a limit on different sessions; it prevents
+duplicate adapters from competing for the same messages.
 
 ## The scheduler observes only the local store
 
@@ -40,6 +53,9 @@ not appear to the relay operator as a new poller and cannot drain another recipi
   compute that fingerprint. It still cannot reach message contents.
 - **Waking the host through an MCP notification.** A scheduler logging notification is a transport
   signal and does not start a model turn. An idle host is not guaranteed to read `inbox` automatically.
+- **Privacy of presence metadata.** The relay can see signed state metadata such as the fingerprint,
+  session ID, instance ID, and observed/expiry timestamps. A signature authenticates this metadata;
+  it does not encrypt it.
 - **Replay of a polling request inside the 5-minute validity window.** The relay is stateless and
   does not remember a request it has seen.
 - **Forward secrecy against recipient key compromise.** HPKE gives this in no mode. Steal the
@@ -69,18 +85,24 @@ basis for believing who you are talking to is **a fingerprint compared out of ba
 
 Fingerprints are not truncated. Matching the first 16 bits is eight seconds of work to forge.
 
-## One config file is everything
+## One session config file is everything
 
-`~/.agent-channel-mesh/config.json` holds the seed and the channel secrets. Whoever takes that file
-reads every message, past and future. That is why the adapter dies rather than read it at anything
-wider than mode 600.
+Each session's resolver-selected config holds the seed and the channel secrets. Whoever takes that
+file reads every message, past and future. That is why the adapter dies rather than read it at
+anything wider than mode 600.
+
+A normal plugin session gets its session-specific path from the resolver. Sharing `ACM_CONFIG` across
+sessions gives up that isolation. An optional Codex hook invoked without session metadata does not
+fall back to a shared config: it returns `{}` and exits 0. MCP and monitor entry points diagnose the
+missing session ID instead.
 
 Do not back it up — recovery is **re-creating the identity**, not restoring one, and at that point
 the fingerprints others compared get compared again.
 
 ## The relay is logically stateless
 
-It holds no session, ratchet, or group state; for offline delivery it keeps encrypted blobs in a TTL
-store and nothing else. That is why changing relays leaves identities and channels intact.
+It holds no long-lived session, ratchet, or group state; for offline delivery it keeps encrypted blobs
+in a TTL store. Presence is separate signed, short-lived TTL metadata. That is why changing relays
+leaves identities and channels intact.
 
 The canonical design rationale is [`docs/architecture.md`](https://github.com/Seungwoo321/agent-channel-mesh/blob/main/docs/architecture.md) in the repository.

@@ -17,10 +17,57 @@ sidebar:
 | `inbox` | 로컬 저장소에서 도착한 것을 읽는다. 릴레이를 다시 조회하지 않는다 |
 | `whoami` | 내 `sign`·`kem` 공개키와 지문을 보여준다 |
 | `status` | 릴레이·수신 루프·로컬 수신함·전달 방식·호스트 깨우기 가능 여부를 읽는다 |
+| `channel_status` | 설정된 멤버와 서명된 세션 presence를 읽는다. 변경하지 않는다 |
 | `wait` | 현재 모델 턴에서 로컬 수신함의 변화를 제한 시간 동안 기다린다 |
 
 `wait.timeout_ms`의 기본값은 5000ms, 상한은 30000ms다. 이 툴도 릴레이를 폴링하거나 새 수신
 루프를 만들지 않는다.
+
+## 세션 수신·presence 상태
+
+일반 MCP 어댑터는 세션마다 하나의 receiver를 띄운다. receiver는 릴레이에서 암호문을 가져와
+복호화한 뒤 그 세션의 로컬 저장소에 쓴다. 세션은 설정·신원·저장소 namespace·receiver lease를
+각각 가지므로, 같은 릴레이와 채널을 써도 수신함은 합쳐지지 않는다.
+
+같은 세션 설정으로 어댑터를 두 개 띄우면 receiver lease가 하나만 허용한다. 두 번째 어댑터는
+`busy`로 시작하지 못하고, 기존 프로세스가 lease를 잃으면 `lost`로 표시된다. 이것은 여러
+세션을 막는 기능이 아니라 **같은 수신함을 두 프로세스가 드레인하지 못하게 하는 보호 장치**다.
+중복이 의심되면 `status`로 확인하고 해당 세션의 오래된 어댑터만 종료한 뒤 세션을 다시 연다.
+`channel_status`와 대시보드는 이 lease를 잡지 않는다.
+
+### `channel_status`
+
+`channel_status`는 현재 세션에서 볼 수 있는 채널 연결의 읽기 전용 스냅샷이다. 메시지를
+가져오거나 삭제하지 않고, 설정과 관찰 결과를 섞지 않는다.
+
+- 설정에 적힌 채널 멤버와 실제로 관찰된 presence를 함께 보여 준다.
+- presence는 같은 Ed25519 신원이 서명한 TTL 기록이다. heartbeat는 약 30초마다 갱신되고
+  약 90초 뒤 만료된다.
+- 유효하고 만료되지 않은 heartbeat만 `online`이다. heartbeat가 없거나 오래됐으면 `unknown`
+  이며, 이것만으로 세션이 오프라인이라고 결론 내리지 않는다.
+- 설정에 없지만 서명이 검증된 외부 세션은 `unmatched_presence`로 보여 준다. 추가할지 여부는
+  사용자가 지문을 대역 외로 확인한 뒤 결정한다.
+- 같은 신원의 여러 프로세스나 PC는 `session_id`·`instance_id`별로 따로 보여 준다.
+
+presence에는 상태를 상관시키는 데 필요한 지문·라벨·세션/인스턴스 ID·관찰/만료 시각이 들어갈
+수 있지만 메시지 본문은 들어가지 않는다. 릴레이가 잠시 보관하는 것도 이 서명된 메타데이터다.
+
+### HTML 현황판
+
+어댑터 CLI의 `dashboard` 명령은 `channel_status`와 같은 스냅샷을 HTML로 쓴다.
+
+```bash
+bun run src/adapter/bin.ts dashboard \
+  --config <session-config.json> \
+  --output .local/dashboards/channel-status.html \
+  --watch-ms 30000
+```
+
+`--config`는 관찰할 세션 설정, `--output`은 출력 파일, `--watch-ms`는 반복 갱신 간격이다.
+`--watch-ms`를 생략하면 한 번만 쓴다. 이 명령은 receiver lease를 잡지 않고 릴레이의
+`/fetch`를 호출하지 않는 관찰자다. 신원·설정 멤버·presence·`unmatched_presence`는 보여
+주지만 메시지 본문·개인 시드·채널 비밀은 보여 주지 않는다. 한 세션만이 아니라 릴레이에서
+관찰되는 외부 세션과 여러 인스턴스도 현황판에 남긴다.
 
 릴레이가 설정된 세션에서 receiver lease가 `busy` 또는 `lost`이면 `inbox`는 이미 로컬에 있는
 기록을 보여 줄 수 있지만 명시적 오류와 함께 목록이 불완전할 수 있다고 표시한다. 이때 새
@@ -59,6 +106,10 @@ sidebar:
 - 새 receiver lease 획득
 - 메시지 claim, 삭제, 읽음 처리
 - 다른 세션의 스케줄 조회
+
+기본 수신 루프는 별도로 릴레이를 폴링한다. scheduler는 그 루프를 대신하지 않고, 이미 로컬
+저장소에 기록된 결과만 관찰한다. 기본 수신 루프의 빈 응답·실패 backoff는 2초에서 시작해
+최대 5분까지 늘어나며, 메시지를 받으면 초기화된다.
 
 스케줄러는 Croner의 세션 로컬 타이머를 사용한다. `schedule_list`에는
 `scheduled`·`running`·`completed`·`cancelled`·`expired`·`replaced` 상태가 나타날 수 있다.
